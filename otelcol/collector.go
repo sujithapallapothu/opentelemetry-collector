@@ -111,6 +111,30 @@ type Collector struct {
 	updateConfigProviderLogger func(core zapcore.Core)
 }
 
+func NewCollectorWithCustomConfigProvider(set CollectorSettings, configProvider ConfigProvider) (*Collector, error) {
+	bc := newBufferedCore(zapcore.DebugLevel)
+	cc := &collectorCore{core: bc}
+	options := append([]zap.Option{zap.WithCaller(true)}, set.LoggingOptions...)
+	logger := zap.New(cc, options...)
+	set.ConfigProviderSettings.ResolverSettings.ProviderSettings = confmap.ProviderSettings{Logger: logger}
+	set.ConfigProviderSettings.ResolverSettings.ConverterSettings = confmap.ConverterSettings{Logger: logger}
+
+	state := &atomic.Int32{}
+	state.Store(int32(StateStarting))
+	return &Collector{
+		set:          set,
+		state:        state,
+		shutdownChan: make(chan struct{}),
+		// Per signal.Notify documentation, a size of the channel equaled with
+		// the number of signals getting notified on is recommended.
+		signalsChannel:             make(chan os.Signal, 3),
+		asyncErrorChannel:          make(chan error),
+		configProvider:             configProvider,
+		bc:                         bc,
+		updateConfigProviderLogger: cc.SetCore,
+	}, nil
+}
+
 // NewCollector creates and returns a new instance of Collector.
 func NewCollector(set CollectorSettings) (*Collector, error) {
 	bc := newBufferedCore(zapcore.DebugLevel)
