@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"go.opentelemetry.io/collector/exporter/exporterbatcher"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -17,15 +18,15 @@ import (
 func TestMergeMetrics(t *testing.T) {
 	mr1 := &metricsRequest{md: testdata.GenerateMetrics(2)}
 	mr2 := &metricsRequest{md: testdata.GenerateMetrics(3)}
-	res, err := mergeMetrics(context.Background(), mr1, mr2)
-	assert.Nil(t, err)
+	res, err := mr1.Merge(context.Background(), mr2)
+	require.NoError(t, err)
 	assert.Equal(t, 5, res.(*metricsRequest).md.MetricCount())
 }
 
 func TestMergeMetricsInvalidInput(t *testing.T) {
 	mr1 := &tracesRequest{td: testdata.GenerateTraces(2)}
 	mr2 := &metricsRequest{md: testdata.GenerateMetrics(3)}
-	_, err := mergeMetrics(context.Background(), mr1, mr2)
+	_, err := mr1.Merge(context.Background(), mr2)
 	assert.Error(t, err)
 }
 
@@ -45,13 +46,6 @@ func TestMergeSplitMetrics(t *testing.T) {
 			expected: []*metricsRequest{{md: pmetric.NewMetrics()}},
 		},
 		{
-			name:     "both_requests_nil",
-			cfg:      exporterbatcher.MaxSizeConfig{MaxSizeItems: 10},
-			mr1:      nil,
-			mr2:      nil,
-			expected: []*metricsRequest{},
-		},
-		{
 			name:     "first_request_empty",
 			cfg:      exporterbatcher.MaxSizeConfig{MaxSizeItems: 10},
 			mr1:      &metricsRequest{md: pmetric.NewMetrics()},
@@ -59,17 +53,10 @@ func TestMergeSplitMetrics(t *testing.T) {
 			expected: []*metricsRequest{{md: testdata.GenerateMetrics(5)}},
 		},
 		{
-			name:     "first_requests_nil",
+			name:     "first_empty_second_nil",
 			cfg:      exporterbatcher.MaxSizeConfig{MaxSizeItems: 10},
-			mr1:      nil,
-			mr2:      &metricsRequest{md: testdata.GenerateMetrics(5)},
-			expected: []*metricsRequest{{md: testdata.GenerateMetrics(5)}},
-		},
-		{
-			name:     "first_nil_second_empty",
-			cfg:      exporterbatcher.MaxSizeConfig{MaxSizeItems: 10},
-			mr1:      nil,
-			mr2:      &metricsRequest{md: pmetric.NewMetrics()},
+			mr1:      &metricsRequest{md: pmetric.NewMetrics()},
+			mr2:      nil,
 			expected: []*metricsRequest{{md: pmetric.NewMetrics()}},
 		},
 		{
@@ -86,7 +73,7 @@ func TestMergeSplitMetrics(t *testing.T) {
 		{
 			name: "split_only",
 			cfg:  exporterbatcher.MaxSizeConfig{MaxSizeItems: 14},
-			mr1:  nil,
+			mr1:  &metricsRequest{md: pmetric.NewMetrics()},
 			mr2:  &metricsRequest{md: testdata.GenerateMetrics(15)}, // 15 metrics, 30 data points
 			expected: []*metricsRequest{
 				{md: testdata.GenerateMetrics(7)}, // 7 metrics, 14 data points
@@ -132,8 +119,8 @@ func TestMergeSplitMetrics(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := mergeSplitMetrics(context.Background(), tt.cfg, tt.mr1, tt.mr2)
-			assert.Nil(t, err)
+			res, err := tt.mr1.MergeSplit(context.Background(), tt.cfg, tt.mr2)
+			require.NoError(t, err)
 			assert.Equal(t, len(tt.expected), len(res))
 			for i := range res {
 				assert.Equal(t, tt.expected[i], res[i].(*metricsRequest))
@@ -145,7 +132,7 @@ func TestMergeSplitMetrics(t *testing.T) {
 func TestMergeSplitMetricsInvalidInput(t *testing.T) {
 	r1 := &tracesRequest{td: testdata.GenerateTraces(2)}
 	r2 := &metricsRequest{md: testdata.GenerateMetrics(3)}
-	_, err := mergeSplitMetrics(context.Background(), exporterbatcher.MaxSizeConfig{MaxSizeItems: 10}, r1, r2)
+	_, err := r1.MergeSplit(context.Background(), exporterbatcher.MaxSizeConfig{MaxSizeItems: 10}, r2)
 	assert.Error(t, err)
 }
 

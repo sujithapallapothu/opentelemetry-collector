@@ -110,6 +110,8 @@ linters-settings:
             desc: "Use 'errors' or 'fmt' instead of github.com/pkg/errors"
           - pkg: github.com/hashicorp/go-multierror
             desc: "Use go.uber.org/multierr instead of github.com/hashicorp/go-multierror"
+          - pkg: "math/rand$"
+            desc: "Use the newer 'math/rand/v2' instead of math/rand"
         # Add a different guard rule so that we can ignore tests.
       ignore-in-test:
           deny:
@@ -119,12 +121,15 @@ linters-settings:
           files:
             - "!**/*_test.go"
 
+  testifylint:
+    enable-all: true   
+
 linters:
   enable:
+    - copyloopvar
     - depguard
     - errcheck
     - errorlint
-    - exportloopref
     - gocritic
     - gofmt
     - goimports
@@ -134,6 +139,7 @@ linters:
     - revive
     - staticcheck
     - tenv
+    - testifylint
     - unconvert
     - unused
     - unparam

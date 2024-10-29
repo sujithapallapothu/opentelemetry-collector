@@ -4,54 +4,54 @@
 package telemetry // import "go.opentelemetry.io/collector/service/telemetry"
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/collector/service/telemetry/internal"
+	"go.opentelemetry.io/collector/config/configtelemetry"
+	"go.opentelemetry.io/collector/featuregate"
 )
 
-func TestAttributes(t *testing.T) {
+func TestNewTracerProvider(t *testing.T) {
 	tests := []struct {
-		name           string
-		cfg            Config
-		buildInfo      component.BuildInfo
-		wantAttributes map[string]interface{}
+		name               string
+		wantTracerProvider any
+		noopTracerGate     bool
+		cfg                Config
 	}{
 		{
-			name:           "no build info and no resource config",
-			cfg:            Config{},
-			wantAttributes: map[string]interface{}{"service.name": "", "service.version": ""},
+			name: "trace level none",
+			cfg: Config{
+				Traces: TracesConfig{
+					Level: configtelemetry.LevelNone,
+				},
+			},
+			wantTracerProvider: &noopNoContextTracerProvider{},
 		},
 		{
-			name:           "build info and no resource config",
-			cfg:            Config{},
-			buildInfo:      component.BuildInfo{Command: "otelcoltest", Version: "0.0.0-test"},
-			wantAttributes: map[string]interface{}{"service.name": "otelcoltest", "service.version": "0.0.0-test"},
+			name:               "noop tracer feature gate",
+			cfg:                Config{},
+			noopTracerGate:     true,
+			wantTracerProvider: &noopNoContextTracerProvider{},
 		},
 		{
-			name:           "no build info and resource config",
-			cfg:            Config{Resource: map[string]*string{"service.name": ptr("resource.name"), "service.version": ptr("resource.version"), "test": ptr("test")}},
-			wantAttributes: map[string]interface{}{"service.name": "resource.name", "service.version": "resource.version", "test": "test"},
-		},
-		{
-			name:           "build info and resource config",
-			buildInfo:      component.BuildInfo{Command: "otelcoltest", Version: "0.0.0-test"},
-			cfg:            Config{Resource: map[string]*string{"service.name": ptr("resource.name"), "service.version": ptr("resource.version"), "test": ptr("test")}},
-			wantAttributes: map[string]interface{}{"service.name": "resource.name", "service.version": "resource.version", "test": "test"},
-		},
-		{
-			name:           "deleting a nil value",
-			buildInfo:      component.BuildInfo{Command: "otelcoltest", Version: "0.0.0-test"},
-			cfg:            Config{Resource: map[string]*string{"service.name": nil, "service.version": ptr("resource.version"), "test": ptr("test")}},
-			wantAttributes: map[string]interface{}{"service.version": "resource.version", "test": "test"},
+			name:               "tracer provider",
+			wantTracerProvider: &sdktrace.TracerProvider{},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			attrs := attributes(internal.Settings{BuildInfo: tt.buildInfo}, tt.cfg)
-			require.Equal(t, tt.wantAttributes, attrs)
+			previousValue := noopTracerProvider.IsEnabled()
+			// expect error due to deprecated flag
+			require.NoError(t, featuregate.GlobalRegistry().Set(noopTracerProvider.ID(), tt.noopTracerGate))
+			defer func() {
+				require.NoError(t, featuregate.GlobalRegistry().Set(noopTracerProvider.ID(), previousValue))
+			}()
+			provider, err := newTracerProvider(context.TODO(), Settings{}, tt.cfg)
+			require.NoError(t, err)
+			require.IsType(t, tt.wantTracerProvider, provider)
 		})
 	}
 }

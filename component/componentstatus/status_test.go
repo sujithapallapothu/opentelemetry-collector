@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.opentelemetry.io/collector/component"
 )
 
 func TestNewStatusEvent(t *testing.T) {
@@ -25,7 +27,7 @@ func TestNewStatusEvent(t *testing.T) {
 		t.Run(fmt.Sprintf("%s without error", status), func(t *testing.T) {
 			ev := NewEvent(status)
 			require.Equal(t, status, ev.Status())
-			require.Nil(t, ev.Err())
+			require.NoError(t, ev.Err())
 			require.False(t, ev.Timestamp().IsZero())
 		})
 	}
@@ -87,4 +89,43 @@ func TestStatusIsError(t *testing.T) {
 			assert.Equal(t, tc.isError, StatusIsError(tc.status))
 		})
 	}
+}
+
+func Test_ReportStatus(t *testing.T) {
+	t.Run("Reporter implemented", func(t *testing.T) {
+		r := &reporter{}
+		ReportStatus(r, NewEvent(StatusOK))
+		require.True(t, r.reportStatusCalled)
+	})
+
+	t.Run("Reporter not implemented", func(t *testing.T) {
+		h := &host{}
+		ReportStatus(h, NewEvent(StatusOK))
+		require.False(t, h.reportStatusCalled)
+	})
+}
+
+var _ = (component.Host)(nil)
+var _ = (Reporter)(nil)
+
+type reporter struct {
+	reportStatusCalled bool
+}
+
+func (r *reporter) GetExtensions() map[component.ID]component.Component {
+	return nil
+}
+
+func (r *reporter) Report(_ *Event) {
+	r.reportStatusCalled = true
+}
+
+var _ = (component.Host)(nil)
+
+type host struct {
+	reportStatusCalled bool
+}
+
+func (h *host) GetExtensions() map[component.ID]component.Component {
+	return nil
 }

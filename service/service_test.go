@@ -17,23 +17,24 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/contrib/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/component/componentstatus"
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configtelemetry"
 	"go.opentelemetry.io/collector/confmap"
-	"go.opentelemetry.io/collector/connector/connectortest"
-	"go.opentelemetry.io/collector/exporter/exportertest"
 	"go.opentelemetry.io/collector/extension"
-	"go.opentelemetry.io/collector/extension/extensiontest"
 	"go.opentelemetry.io/collector/extension/zpagesextension"
 	"go.opentelemetry.io/collector/internal/testutil"
 	"go.opentelemetry.io/collector/pdata/pcommon"
-	"go.opentelemetry.io/collector/processor/processortest"
-	"go.opentelemetry.io/collector/receiver/receivertest"
+	"go.opentelemetry.io/collector/pipeline"
+	"go.opentelemetry.io/collector/pipeline/pipelineprofiles"
 	"go.opentelemetry.io/collector/service/extensions"
+	"go.opentelemetry.io/collector/service/internal/builders"
+	"go.opentelemetry.io/collector/service/internal/promtest"
 	"go.opentelemetry.io/collector/service/pipelines"
 	"go.opentelemetry.io/collector/service/telemetry"
 )
@@ -185,19 +186,19 @@ func TestServiceGetFactory(t *testing.T) {
 	})
 
 	assert.Nil(t, srv.host.GetFactory(component.KindReceiver, wrongType))
-	assert.Equal(t, set.Receivers.Factory(nopType), srv.host.GetFactory(component.KindReceiver, nopType))
+	assert.Equal(t, srv.host.Receivers.Factory(nopType), srv.host.GetFactory(component.KindReceiver, nopType))
 
 	assert.Nil(t, srv.host.GetFactory(component.KindProcessor, wrongType))
-	assert.Equal(t, set.Processors.Factory(nopType), srv.host.GetFactory(component.KindProcessor, nopType))
+	assert.Equal(t, srv.host.Processors.Factory(nopType), srv.host.GetFactory(component.KindProcessor, nopType))
 
 	assert.Nil(t, srv.host.GetFactory(component.KindExporter, wrongType))
-	assert.Equal(t, set.Exporters.Factory(nopType), srv.host.GetFactory(component.KindExporter, nopType))
+	assert.Equal(t, srv.host.Exporters.Factory(nopType), srv.host.GetFactory(component.KindExporter, nopType))
 
 	assert.Nil(t, srv.host.GetFactory(component.KindConnector, wrongType))
-	assert.Equal(t, set.Connectors.Factory(nopType), srv.host.GetFactory(component.KindConnector, nopType))
+	assert.Equal(t, srv.host.Connectors.Factory(nopType), srv.host.GetFactory(component.KindConnector, nopType))
 
 	assert.Nil(t, srv.host.GetFactory(component.KindExtension, wrongType))
-	assert.Equal(t, set.Extensions.Factory(nopType), srv.host.GetFactory(component.KindExtension, nopType))
+	assert.Equal(t, srv.host.Extensions.Factory(nopType), srv.host.GetFactory(component.KindExtension, nopType))
 
 	// Try retrieve non existing component.Kind.
 	assert.Nil(t, srv.host.GetFactory(42, nopType))
@@ -227,21 +228,29 @@ func TestServiceGetExporters(t *testing.T) {
 		assert.NoError(t, srv.Shutdown(context.Background()))
 	})
 
+	// nolint
 	expMap := srv.host.GetExporters()
-	assert.Len(t, expMap, 3)
-	assert.Len(t, expMap[component.DataTypeTraces], 1)
-	assert.Contains(t, expMap[component.DataTypeTraces], component.NewID(nopType))
-	assert.Len(t, expMap[component.DataTypeMetrics], 1)
-	assert.Contains(t, expMap[component.DataTypeMetrics], component.NewID(nopType))
-	assert.Len(t, expMap[component.DataTypeLogs], 1)
-	assert.Contains(t, expMap[component.DataTypeLogs], component.NewID(nopType))
+
+	v, ok := expMap[pipeline.SignalTraces]
+	assert.True(t, ok)
+	assert.NotNil(t, v)
+
+	assert.Len(t, expMap, 4)
+	assert.Len(t, expMap[pipeline.SignalTraces], 1)
+	assert.Contains(t, expMap[pipeline.SignalTraces], component.NewID(nopType))
+	assert.Len(t, expMap[pipeline.SignalMetrics], 1)
+	assert.Contains(t, expMap[pipeline.SignalMetrics], component.NewID(nopType))
+	assert.Len(t, expMap[pipeline.SignalLogs], 1)
+	assert.Contains(t, expMap[pipeline.SignalLogs], component.NewID(nopType))
+	assert.Len(t, expMap[pipelineprofiles.SignalProfiles], 1)
+	assert.Contains(t, expMap[pipelineprofiles.SignalProfiles], component.NewID(nopType))
 }
 
 // TestServiceTelemetryCleanupOnError tests that if newService errors due to an invalid config telemetry is cleaned up
 // and another service with a valid config can be started right after.
 func TestServiceTelemetryCleanupOnError(t *testing.T) {
 	invalidCfg := newNopConfig()
-	invalidCfg.Pipelines[component.MustNewID("traces")].Processors[0] = component.MustNewID("invalid")
+	invalidCfg.Pipelines[pipeline.NewID(pipeline.SignalTraces)].Processors[0] = component.MustNewID("invalid")
 	// Create a service with an invalid config and expect an error
 	_, err := New(context.Background(), newNopSettings(), invalidCfg)
 	require.Error(t, err)
@@ -255,15 +264,15 @@ func TestServiceTelemetryCleanupOnError(t *testing.T) {
 func TestServiceTelemetry(t *testing.T) {
 	for _, tc := range ownMetricsTestCases() {
 		t.Run(fmt.Sprintf("ipv4_%s", tc.name), func(t *testing.T) {
-			testCollectorStartHelper(t, tc, "tcp4")
+			testCollectorStartHelperWithReaders(t, tc, "tcp4")
 		})
 		t.Run(fmt.Sprintf("ipv6_%s", tc.name), func(t *testing.T) {
-			testCollectorStartHelper(t, tc, "tcp6")
+			testCollectorStartHelperWithReaders(t, tc, "tcp6")
 		})
 	}
 }
 
-func testCollectorStartHelper(t *testing.T, tc ownMetricsTestCase, network string) {
+func testCollectorStartHelperWithReaders(t *testing.T, tc ownMetricsTestCase, network string) {
 	var once sync.Once
 	loggingHookCalled := false
 	hook := func(zapcore.Entry) error {
@@ -274,15 +283,15 @@ func testCollectorStartHelper(t *testing.T, tc ownMetricsTestCase, network strin
 	}
 
 	var (
-		metricsAddr string
+		metricsAddr *config.Prometheus
 		zpagesAddr  string
 	)
 	switch network {
 	case "tcp", "tcp4":
-		metricsAddr = testutil.GetAvailableLocalAddress(t)
+		metricsAddr = promtest.GetAvailableLocalAddressPrometheus(t)
 		zpagesAddr = testutil.GetAvailableLocalAddress(t)
 	case "tcp6":
-		metricsAddr = testutil.GetAvailableLocalIPv6Address(t)
+		metricsAddr = promtest.GetAvailableLocalIPv6AddressPrometheus(t)
 		zpagesAddr = testutil.GetAvailableLocalIPv6Address(t)
 	}
 	require.NotZero(t, metricsAddr, "network must be either of tcp, tcp4 or tcp6")
@@ -290,14 +299,25 @@ func testCollectorStartHelper(t *testing.T, tc ownMetricsTestCase, network strin
 
 	set := newNopSettings()
 	set.BuildInfo = component.BuildInfo{Version: "test version", Command: otelCommand}
-	set.Extensions = extension.NewBuilder(
-		map[component.ID]component.Config{component.MustNewID("zpages"): &zpagesextension.Config{ServerConfig: confighttp.ServerConfig{Endpoint: zpagesAddr}}},
-		map[component.Type]extension.Factory{component.MustNewType("zpages"): zpagesextension.NewFactory()})
+	set.ExtensionsConfigs = map[component.ID]component.Config{
+		component.MustNewID("zpages"): &zpagesextension.Config{
+			ServerConfig: confighttp.ServerConfig{Endpoint: zpagesAddr},
+		},
+	}
+	set.ExtensionsFactories = map[component.Type]extension.Factory{component.MustNewType("zpages"): zpagesextension.NewFactory()}
 	set.LoggingOptions = []zap.Option{zap.Hooks(hook)}
 
 	cfg := newNopConfig()
 	cfg.Extensions = []component.ID{component.MustNewID("zpages")}
-	cfg.Telemetry.Metrics.Address = metricsAddr
+	cfg.Telemetry.Metrics.Readers = []config.MetricReader{
+		{
+			Pull: &config.PullMetricReader{
+				Exporter: config.MetricExporter{
+					Prometheus: metricsAddr,
+				},
+			},
+		},
+	}
 	cfg.Telemetry.Resource = make(map[string]*string)
 	// Include resource attributes under the service::telemetry::resource key.
 	for k, v := range tc.userDefinedResource {
@@ -315,7 +335,7 @@ func testCollectorStartHelper(t *testing.T, tc ownMetricsTestCase, network strin
 		assert.True(t, loggingHookCalled)
 
 		assertResourceLabels(t, srv.telemetrySettings.Resource, tc.expectedLabels)
-		assertMetrics(t, metricsAddr, tc.expectedLabels)
+		assertMetrics(t, fmt.Sprintf("%s:%d", *metricsAddr.Host, *metricsAddr.Port), tc.expectedLabels)
 		assertZPages(t, zpagesAddr)
 		require.NoError(t, srv.Shutdown(context.Background()))
 	}
@@ -340,6 +360,10 @@ func TestServiceTelemetryRestart(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NoError(t, resp.Body.Close())
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	// Response body must be closed now instead of defer as the test
+	// restarts the server on the same port. Leaving response open
+	// leaks a goroutine.
+	resp.Body.Close()
 
 	// Shutdown the service
 	require.NoError(t, srvOne.Shutdown(context.Background()))
@@ -362,6 +386,7 @@ func TestServiceTelemetryRestart(t *testing.T) {
 		100*time.Millisecond,
 		"Must get a valid response from the service",
 	)
+	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Shutdown the new service
@@ -374,9 +399,8 @@ func TestExtensionNotificationFailure(t *testing.T) {
 
 	var extName = component.MustNewType("configWatcher")
 	configWatcherExtensionFactory := newConfigWatcherExtensionFactory(extName)
-	set.Extensions = extension.NewBuilder(
-		map[component.ID]component.Config{component.NewID(extName): configWatcherExtensionFactory.CreateDefaultConfig()},
-		map[component.Type]extension.Factory{extName: configWatcherExtensionFactory})
+	set.ExtensionsConfigs = map[component.ID]component.Config{component.NewID(extName): configWatcherExtensionFactory.CreateDefaultConfig()}
+	set.ExtensionsFactories = map[component.Type]extension.Factory{extName: configWatcherExtensionFactory}
 	cfg.Extensions = []component.ID{component.NewID(extName)}
 
 	// Create a service
@@ -397,9 +421,8 @@ func TestNilCollectorEffectiveConfig(t *testing.T) {
 
 	var extName = component.MustNewType("configWatcher")
 	configWatcherExtensionFactory := newConfigWatcherExtensionFactory(extName)
-	set.Extensions = extension.NewBuilder(
-		map[component.ID]component.Config{component.NewID(extName): configWatcherExtensionFactory.CreateDefaultConfig()},
-		map[component.Type]extension.Factory{extName: configWatcherExtensionFactory})
+	set.ExtensionsConfigs = map[component.ID]component.Config{component.NewID(extName): configWatcherExtensionFactory.CreateDefaultConfig()}
+	set.ExtensionsFactories = map[component.Type]extension.Factory{extName: configWatcherExtensionFactory}
 	cfg.Extensions = []component.ID{component.NewID(extName)}
 
 	// Create a service
@@ -437,11 +460,11 @@ func TestServiceFatalError(t *testing.T) {
 	})
 
 	go func() {
-		ev := component.NewFatalErrorEvent(assert.AnError)
-		srv.host.notifyComponentStatusChange(&component.InstanceID{}, ev)
+		ev := componentstatus.NewFatalErrorEvent(assert.AnError)
+		srv.host.NotifyComponentStatusChange(&componentstatus.InstanceID{}, ev)
 	}()
 
-	err = <-srv.host.asyncErrorChannel
+	err = <-srv.host.AsyncErrorChannel
 
 	require.ErrorIs(t, err, assert.AnError)
 }
@@ -479,7 +502,20 @@ func assertMetrics(t *testing.T, metricsAddr string, expectedLabels map[string]l
 	require.NoError(t, err)
 
 	prefix := "otelcol"
+	expectedMetrics := map[string]bool{
+		"target_info":                                    false,
+		"otelcol_process_memory_rss":                     false,
+		"otelcol_process_cpu_seconds":                    false,
+		"otelcol_process_runtime_total_sys_memory_bytes": false,
+		"otelcol_process_runtime_heap_alloc_bytes":       false,
+		"otelcol_process_runtime_total_alloc_bytes":      false,
+		"otelcol_process_uptime":                         false,
+	}
 	for metricName, metricFamily := range parsed {
+		if _, ok := expectedMetrics[metricName]; !ok {
+			require.True(t, ok, "unexpected metric: %s", metricName)
+		}
+		expectedMetrics[metricName] = true
 		if metricName != "target_info" {
 			// require is used here so test fails with a single message.
 			require.True(
@@ -509,6 +545,9 @@ func assertMetrics(t *testing.T, metricsAddr string, expectedLabels map[string]l
 			}
 		}
 	}
+	for k, val := range expectedMetrics {
+		require.True(t, val, "missing metric: %s", k)
+	}
 }
 
 func assertZPages(t *testing.T, zpagesAddr string) {
@@ -522,9 +561,7 @@ func assertZPages(t *testing.T, zpagesAddr string) {
 	testZPagePathFn := func(t *testing.T, path string) {
 		client := &http.Client{}
 		resp, err := client.Get("http://" + zpagesAddr + path)
-		if !assert.NoError(t, err, "error retrieving zpage at %q", path) {
-			return
-		}
+		require.NoError(t, err, "error retrieving zpage at %q", path)
 		assert.Equal(t, http.StatusOK, resp.StatusCode, "unsuccessful zpage %q GET", path)
 		assert.NoError(t, resp.Body.Close())
 	}
@@ -535,30 +572,47 @@ func assertZPages(t *testing.T, zpagesAddr string) {
 }
 
 func newNopSettings() Settings {
+	receiversConfigs, receiversFactories := builders.NewNopReceiverConfigsAndFactories()
+	processorsConfigs, processorsFactories := builders.NewNopProcessorConfigsAndFactories()
+	connectorsConfigs, connectorsFactories := builders.NewNopConnectorConfigsAndFactories()
+	exportersConfigs, exportersFactories := builders.NewNopExporterConfigsAndFactories()
+	extensionsConfigs, extensionsFactories := builders.NewNopExtensionConfigsAndFactories()
+
 	return Settings{
-		BuildInfo:     component.NewDefaultBuildInfo(),
-		CollectorConf: confmap.New(),
-		Receivers:     receivertest.NewNopBuilder(),
-		Processors:    processortest.NewNopBuilder(),
-		Exporters:     exportertest.NewNopBuilder(),
-		Connectors:    connectortest.NewNopBuilder(),
-		Extensions:    extensiontest.NewNopBuilder(),
+		BuildInfo:           component.NewDefaultBuildInfo(),
+		CollectorConf:       confmap.New(),
+		ReceiversConfigs:    receiversConfigs,
+		ReceiversFactories:  receiversFactories,
+		ProcessorsConfigs:   processorsConfigs,
+		ProcessorsFactories: processorsFactories,
+		ExportersConfigs:    exportersConfigs,
+		ExportersFactories:  exportersFactories,
+		ConnectorsConfigs:   connectorsConfigs,
+		ConnectorsFactories: connectorsFactories,
+		ExtensionsConfigs:   extensionsConfigs,
+		ExtensionsFactories: extensionsFactories,
+		AsyncErrorChannel:   make(chan error),
 	}
 }
 
 func newNopConfig() Config {
 	return newNopConfigPipelineConfigs(pipelines.Config{
-		component.MustNewID("traces"): {
+		pipeline.NewID(pipeline.SignalTraces): {
 			Receivers:  []component.ID{component.NewID(nopType)},
 			Processors: []component.ID{component.NewID(nopType)},
 			Exporters:  []component.ID{component.NewID(nopType)},
 		},
-		component.MustNewID("metrics"): {
+		pipeline.NewID(pipeline.SignalMetrics): {
 			Receivers:  []component.ID{component.NewID(nopType)},
 			Processors: []component.ID{component.NewID(nopType)},
 			Exporters:  []component.ID{component.NewID(nopType)},
 		},
-		component.MustNewID("logs"): {
+		pipeline.NewID(pipeline.SignalLogs): {
+			Receivers:  []component.ID{component.NewID(nopType)},
+			Processors: []component.ID{component.NewID(nopType)},
+			Exporters:  []component.ID{component.NewID(nopType)},
+		},
+		pipeline.NewID(pipelineprofiles.SignalProfiles): {
 			Receivers:  []component.ID{component.NewID(nopType)},
 			Processors: []component.ID{component.NewID(nopType)},
 			Exporters:  []component.ID{component.NewID(nopType)},
@@ -588,8 +642,13 @@ func newNopConfigPipelineConfigs(pipelineCfgs pipelines.Config) Config {
 				InitialFields:     map[string]any(nil),
 			},
 			Metrics: telemetry.MetricsConfig{
-				Level:   configtelemetry.LevelBasic,
-				Address: "localhost:8888",
+				Level: configtelemetry.LevelBasic,
+				Readers: []config.MetricReader{{
+					Pull: &config.PullMetricReader{Exporter: config.MetricExporter{Prometheus: &config.Prometheus{
+						Host: newPtr("localhost"),
+						Port: newPtr(8888),
+					}}}},
+				},
 			},
 		},
 	}
@@ -620,4 +679,8 @@ func newConfigWatcherExtensionFactory(name component.Type) extension.Factory {
 		},
 		component.StabilityLevelDevelopment,
 	)
+}
+
+func newPtr[T int | string](str T) *T {
+	return &str
 }

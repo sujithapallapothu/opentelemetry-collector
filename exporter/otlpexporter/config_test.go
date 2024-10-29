@@ -19,13 +19,14 @@ import (
 	"go.opentelemetry.io/collector/config/configtls"
 	"go.opentelemetry.io/collector/confmap"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
+	"go.opentelemetry.io/collector/exporter/exporterbatcher"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 )
 
 func TestUnmarshalDefaultConfig(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
-	assert.NoError(t, confmap.New().Unmarshal(&cfg))
+	require.NoError(t, confmap.New().Unmarshal(&cfg))
 	assert.Equal(t, factory.CreateDefaultConfig(), cfg)
 }
 
@@ -34,10 +35,10 @@ func TestUnmarshalConfig(t *testing.T) {
 	require.NoError(t, err)
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
-	assert.NoError(t, cm.Unmarshal(&cfg))
+	require.NoError(t, cm.Unmarshal(&cfg))
 	assert.Equal(t,
 		&Config{
-			TimeoutSettings: exporterhelper.TimeoutSettings{
+			TimeoutConfig: exporterhelper.TimeoutConfig{
 				Timeout: 10 * time.Second,
 			},
 			RetryConfig: configretry.BackOffConfig{
@@ -48,10 +49,20 @@ func TestUnmarshalConfig(t *testing.T) {
 				MaxInterval:         1 * time.Minute,
 				MaxElapsedTime:      10 * time.Minute,
 			},
-			QueueConfig: exporterhelper.QueueSettings{
+			QueueConfig: exporterhelper.QueueConfig{
 				Enabled:      true,
 				NumConsumers: 2,
 				QueueSize:    10,
+			},
+			BatcherConfig: exporterbatcher.Config{
+				Enabled:      true,
+				FlushTimeout: 200 * time.Millisecond,
+				MinSizeConfig: exporterbatcher.MinSizeConfig{
+					MinSizeItems: 1000,
+				},
+				MaxSizeConfig: exporterbatcher.MaxSizeConfig{
+					MaxSizeItems: 10000,
+				},
 			},
 			ClientConfig: configgrpc.ClientConfig{
 				Headers: map[string]configopaque.String{
@@ -83,7 +94,7 @@ func TestUnmarshalInvalidConfig(t *testing.T) {
 	cm, err := confmaptest.LoadConf(filepath.Join("testdata", "invalid_configs.yaml"))
 	require.NoError(t, err)
 	factory := NewFactory()
-	for _, test := range []struct {
+	for _, tt := range []struct {
 		name     string
 		errorMsg string
 	}{
@@ -120,12 +131,12 @@ func TestUnmarshalInvalidConfig(t *testing.T) {
 			errorMsg: `invalid port "port"`,
 		},
 	} {
-		t.Run(test.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			cfg := factory.CreateDefaultConfig()
-			sub, err := cm.Sub(test.name)
+			sub, err := cm.Sub(tt.name)
 			require.NoError(t, err)
 			assert.NoError(t, sub.Unmarshal(&cfg))
-			assert.ErrorContains(t, component.ValidateConfig(cfg), test.errorMsg)
+			assert.ErrorContains(t, component.ValidateConfig(cfg), tt.errorMsg)
 		})
 	}
 
