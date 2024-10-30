@@ -115,8 +115,8 @@ func NewCollectorWithCustomConfigProvider(set CollectorSettings, configProvider 
 	set.ConfigProviderSettings.ResolverSettings.ProviderSettings = confmap.ProviderSettings{Logger: logger}
 	set.ConfigProviderSettings.ResolverSettings.ConverterSettings = confmap.ConverterSettings{Logger: logger}
 
-	state := &atomic.Int32{}
-	state.Store(int32(StateStarting))
+	state := &atomic.Int64{}
+	state.Store(int64(StateStarting))
 	return &Collector{
 		set:          set,
 		state:        state,
