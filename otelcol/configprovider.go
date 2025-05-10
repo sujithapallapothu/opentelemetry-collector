@@ -85,7 +85,9 @@ func (cm *configProvider) Get(ctx context.Context, factories Factories) (*Config
 	if cfg, err = unmarshal(conf, factories); err != nil {
 		return nil, fmt.Errorf("cannot unmarshal the configuration: %w", err)
 	}
-	fmt.Println("#############cfg in Get##########", cfg)
+	fmt.Println("##########cfg in Get total##########", cfg)
+	fmt.Println("#############cfg in Get receivers##########", cfg.Receivers)
+	fmt.Println("#############cfg in Get processor##########", cfg.Processors)
 
 	return &Config{
 		Receivers:  cfg.Receivers.Configs(),

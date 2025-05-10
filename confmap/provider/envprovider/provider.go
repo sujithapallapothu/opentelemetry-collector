@@ -43,6 +43,7 @@ func newProvider(ps confmap.ProviderSettings) confmap.Provider {
 }
 
 func (emp *provider) Retrieve(_ context.Context, uri string, _ confmap.WatcherFunc) (*confmap.Retrieved, error) {
+	fmt.Println("#######envprovider: Retrieve called with uri:", uri)
 	if !strings.HasPrefix(uri, schemeName+":") {
 		return nil, fmt.Errorf("%q uri is not supported by %q provider", uri, schemeName)
 	}

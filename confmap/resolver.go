@@ -153,14 +153,18 @@ func NewResolver(set ResolverSettings) (*Resolver, error) {
 // Resolve returns the configuration as a Conf, or error otherwise.
 // Should never be called concurrently with itself, Watch or Shutdown.
 func (mr *Resolver) Resolve(ctx context.Context) (*Conf, error) {
+	fmt.Println("######Inside Resolve##########")
 	// First check if already an active watching, close that if any.
 	if err := mr.closeIfNeeded(ctx); err != nil {
 		return nil, fmt.Errorf("cannot close previous watch: %w", err)
+	} else {
+		fmt.Println("######No active watch##########")
 	}
 
 	// Retrieves individual configurations from all URIs in the given order, and merge them in retMap.
 	retMap := New()
 	for _, uri := range mr.uris {
+		fmt.Println("#########each uri", uri)
 		ret, err := mr.retrieveValue(ctx, uri)
 		if err != nil {
 			return nil, fmt.Errorf("cannot retrieve the configuration: %w", err)
@@ -263,6 +267,7 @@ func (mr *Resolver) closeIfNeeded(ctx context.Context) error {
 }
 
 func (mr *Resolver) retrieveValue(ctx context.Context, uri location) (*Retrieved, error) {
+	fmt.Println("##########retrieveValue##########", uri)
 	p, ok := mr.providers[uri.scheme]
 	if !ok {
 		return nil, fmt.Errorf("scheme %q is not supported for uri %q", uri.scheme, uri.asString())
