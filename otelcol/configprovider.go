@@ -99,6 +99,8 @@ func NewConfigProvider(set ConfigProviderSettings) (ConfigProvider, error) {
 
 func (cm *configProvider) Get(ctx context.Context, factories Factories) (*Config, error) {
 	conf, err := cm.mapResolver.Resolve(ctx)
+	fmt.Println("factories", factories)
+	fmt.Println("conf", conf)
 	if err != nil {
 		return nil, fmt.Errorf("cannot resolve the configuration: %w", err)
 	}
@@ -126,6 +128,8 @@ func (cm *configProvider) Get(ctx context.Context, factories Factories) (*Config
 
 		return nil, err
 	}
+	fmt.Println("cfg", cfg)
+	fmt.Println("cfg.Receivers", cfg.Receivers.Configs())
 
 	return &Config{
 		Receivers:  cfg.Receivers.Configs(),
