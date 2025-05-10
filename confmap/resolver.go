@@ -164,6 +164,8 @@ func (mr *Resolver) Resolve(ctx context.Context) (*Conf, error) {
 		ret, err := mr.retrieveValue(ctx, uri)
 		if err != nil {
 			return nil, fmt.Errorf("cannot retrieve the configuration: %w", err)
+		} else {
+			fmt.Println("##########ret in Resolve##########", ret)
 		}
 		mr.closers = append(mr.closers, ret.Close)
 		retCfgMap, err := ret.AsConf()

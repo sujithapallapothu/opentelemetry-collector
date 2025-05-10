@@ -74,15 +74,18 @@ func NewConfigProvider(set ConfigProviderSettings) (ConfigProvider, error) {
 }
 
 func (cm *configProvider) Get(ctx context.Context, factories Factories) (*Config, error) {
+	fmt.Println("##########Get##########", factories.Receivers)
 	conf, err := cm.mapResolver.Resolve(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("cannot resolve the configuration: %w", err)
 	}
+	fmt.Println("##########conf in Get##########", conf)
 
 	var cfg *configSettings
 	if cfg, err = unmarshal(conf, factories); err != nil {
 		return nil, fmt.Errorf("cannot unmarshal the configuration: %w", err)
 	}
+	fmt.Println("#############cfg in Get##########", cfg)
 
 	return &Config{
 		Receivers:  cfg.Receivers.Configs(),
