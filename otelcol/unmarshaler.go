@@ -28,7 +28,7 @@ type configSettings struct {
 // unmarshal the configSettings from a confmap.Conf.
 // After the config is unmarshalled, `Validate()` must be called to validate.
 func unmarshal(v *confmap.Conf, factories Factories) (*configSettings, error) {
-	fmt.Println("unmarshal factories", factories)
+	fmt.Println("#######unmarshal factories", factories)
 	telFactory := telemetry.NewFactory()
 	defaultTelConfig := *telFactory.CreateDefaultConfig().(*telemetry.Config)
 
@@ -43,6 +43,13 @@ func unmarshal(v *confmap.Conf, factories Factories) (*configSettings, error) {
 		Service: service.Config{
 			Telemetry: defaultTelConfig,
 		},
+	}
+	fmt.Println("#######unmarshal cfg", cfg)
+	fmt.Println(" #######end of unmrashall func unmarshal cfg Receivers", cfg.Receivers.Configs())
+	//range over cfg.receivers
+	for id, receiver := range cfg.Receivers.Configs() {
+		fmt.Println("##########unmarshal cfg Receivers id", id)
+		fmt.Println("##########unmarshal cfg Receivers", receiver)
 	}
 
 	return cfg, v.Unmarshal(&cfg)

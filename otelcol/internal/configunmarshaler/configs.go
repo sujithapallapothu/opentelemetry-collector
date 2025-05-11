@@ -14,12 +14,17 @@ import (
 )
 
 type Configs[F component.Factory] struct {
-	cfgs map[component.ID]component.Config
-
+	cfgs      map[component.ID]component.Config
 	factories map[component.Type]F
 }
 
 func NewConfigs[F component.Factory](factories map[component.Type]F) *Configs[F] {
+	fmt.Println("##########NewConfigs##########")
+
+	// Inspect the factories map
+	for key, value := range factories {
+		fmt.Printf("Factory Key: %v, Factory Value: %+v\n", key, value)
+	}
 	return &Configs[F]{factories: factories}
 }
 
@@ -61,6 +66,9 @@ func (c *Configs[F]) Unmarshal(conf *confmap.Conf) error {
 }
 
 func (c *Configs[F]) Configs() map[component.ID]component.Config {
+	fmt.Println("##########Configs##########", c.cfgs)
+
+	fmt.Println("#####returning configs", c.cfgs)
 	return c.cfgs
 }
 
