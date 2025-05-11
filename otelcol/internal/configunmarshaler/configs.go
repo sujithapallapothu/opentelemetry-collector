@@ -6,6 +6,7 @@ package configunmarshaler // import "go.opentelemetry.io/collector/otelcol/inter
 import (
 	"errors"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 
 	"golang.org/x/exp/maps"
 
@@ -23,7 +24,11 @@ func NewConfigs[F component.Factory](factories map[component.Type]F) *Configs[F]
 
 	// Inspect the factories map
 	for key, value := range factories {
-		fmt.Printf("Factory Key: %v, Factory Value: %+v\n", key, value)
+		fmt.Printf("###########Factory Key: %v, Factory Value: %+v\n", key, value)
+		typeStr := value.Type().String()
+		fmt.Printf("############Factory Type: %v\n", typeStr)
+		x := value.CreateDefaultConfig()
+		fmt.Printf("############Value config: %s\n", spew.Sdump(x)) // Use spew.Sdump to capture the output as a string
 	}
 	return &Configs[F]{factories: factories}
 }
