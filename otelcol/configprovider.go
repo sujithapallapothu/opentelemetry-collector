@@ -74,28 +74,36 @@ func NewConfigProvider(set ConfigProviderSettings) (ConfigProvider, error) {
 }
 
 func (cm *configProvider) Get(ctx context.Context, factories Factories) (*Config, error) {
-	fmt.Println("##########Get##########", factories.Receivers)
+
 	conf, err := cm.mapResolver.Resolve(ctx)
 	if err != nil {
+		fmt.Errorf("cannot resolve the configuration 1: %w", err)
 		return nil, fmt.Errorf("cannot resolve the configuration: %w", err)
 	}
-	fmt.Println("##########conf in Get##########", conf)
 
 	var cfg *configSettings
 	if cfg, err = unmarshal(conf, factories); err != nil {
 		return nil, fmt.Errorf("cannot unmarshal the configuration: %w", err)
 	}
-	fmt.Println("##########cfg in Get total##########", cfg)
-	fmt.Println("#############cfg in Get receivers##########", cfg.Receivers)
-	fmt.Println("#############cfg in Get processor##########", cfg.Processors)
+
+	fmt.Println("#############cfg in Get receivers 6 ##########", cfg.Receivers)
+
+	Receivers := cfg.Receivers.Configs()
+	Processors := cfg.Processors.Configs()
+	Exporters := cfg.Exporters.Configs()
+	Connectors := cfg.Connectors.Configs()
+	Extensions := cfg.Extensions.Configs()
+	Service := cfg.Service
+
+	fmt.Printf("###########Receivers - 7: %v\n", Receivers)
 
 	return &Config{
-		Receivers:  cfg.Receivers.Configs(),
-		Processors: cfg.Processors.Configs(),
-		Exporters:  cfg.Exporters.Configs(),
-		Connectors: cfg.Connectors.Configs(),
-		Extensions: cfg.Extensions.Configs(),
-		Service:    cfg.Service,
+		Receivers:  Receivers,
+		Processors: Processors,
+		Exporters:  Exporters,
+		Connectors: Connectors,
+		Extensions: Extensions,
+		Service:    Service,
 	}, nil
 }
 

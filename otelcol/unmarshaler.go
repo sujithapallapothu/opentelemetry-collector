@@ -28,28 +28,29 @@ type configSettings struct {
 // unmarshal the configSettings from a confmap.Conf.
 // After the config is unmarshalled, `Validate()` must be called to validate.
 func unmarshal(v *confmap.Conf, factories Factories) (*configSettings, error) {
-	fmt.Println("#######unmarshal factories", factories)
+	fmt.Println("#######unmarshal factories  2", factories.Receivers)
 	telFactory := telemetry.NewFactory()
 	defaultTelConfig := *telFactory.CreateDefaultConfig().(*telemetry.Config)
 
+	Receivers := configunmarshaler.NewConfigs(factories.Receivers)
+	Processors := configunmarshaler.NewConfigs(factories.Processors)
+	Exporters := configunmarshaler.NewConfigs(factories.Exporters)
+	Connectors := configunmarshaler.NewConfigs(factories.Connectors)
+	Extensions := configunmarshaler.NewConfigs(factories.Extensions)
+	fmt.Println("#######unmarshal cfg - 4", Receivers)
+	fmt.Println("#######unmarshal cfg - 5", defaultTelConfig.Logs.InitialFields)
+
 	// Unmarshal top level sections and validate.
 	cfg := &configSettings{
-		Receivers:  configunmarshaler.NewConfigs(factories.Receivers),
-		Processors: configunmarshaler.NewConfigs(factories.Processors),
-		Exporters:  configunmarshaler.NewConfigs(factories.Exporters),
-		Connectors: configunmarshaler.NewConfigs(factories.Connectors),
-		Extensions: configunmarshaler.NewConfigs(factories.Extensions),
+		Receivers:  Receivers,
+		Processors: Processors,
+		Exporters:  Exporters,
+		Connectors: Connectors,
+		Extensions: Extensions,
 		// TODO: Add a component.ServiceFactory to allow this to be defined by the Service.
 		Service: service.Config{
 			Telemetry: defaultTelConfig,
 		},
-	}
-	fmt.Println("#######unmarshal cfg", cfg)
-	fmt.Println(" #######end of unmrashall func unmarshal cfg Receivers", cfg.Receivers.Configs())
-	//range over cfg.receivers
-	for id, receiver := range cfg.Receivers.Configs() {
-		fmt.Println("##########unmarshal cfg Receivers id", id)
-		fmt.Println("##########unmarshal cfg Receivers", receiver)
 	}
 
 	return cfg, v.Unmarshal(&cfg)

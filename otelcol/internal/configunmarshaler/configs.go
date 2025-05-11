@@ -6,8 +6,6 @@ package configunmarshaler // import "go.opentelemetry.io/collector/otelcol/inter
 import (
 	"errors"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
-
 	"golang.org/x/exp/maps"
 
 	"go.opentelemetry.io/collector/component"
@@ -20,15 +18,10 @@ type Configs[F component.Factory] struct {
 }
 
 func NewConfigs[F component.Factory](factories map[component.Type]F) *Configs[F] {
-	fmt.Println("##########NewConfigs##########")
 
 	// Inspect the factories map
 	for key, value := range factories {
-		fmt.Printf("###########Factory Key: %v, Factory Value: %+v\n", key, value)
-		typeStr := value.Type().String()
-		fmt.Printf("############Factory Type: %v\n", typeStr)
-		x := value.CreateDefaultConfig()
-		fmt.Printf("############Value config: %s\n", spew.Sdump(x)) // Use spew.Sdump to capture the output as a string
+		fmt.Printf("###########Factory Key - 3: %v, Factory Value: %+v\n", key, value)
 	}
 	return &Configs[F]{factories: factories}
 }
@@ -71,9 +64,6 @@ func (c *Configs[F]) Unmarshal(conf *confmap.Conf) error {
 }
 
 func (c *Configs[F]) Configs() map[component.ID]component.Config {
-	fmt.Println("##########Configs##########", c.cfgs)
-
-	fmt.Println("#####returning configs", c.cfgs)
 	return c.cfgs
 }
 
